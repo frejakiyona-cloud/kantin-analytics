@@ -112,6 +112,13 @@ def load_data(file):
     df["week"] = df["date"].dt.isocalendar().week.astype(int)
     if "day_of_week" in df.columns:
         df["day_of_week"] = df["day_of_week"].str.strip().str.capitalize()
+        # Normalize English day names to Indonesian
+        en_to_id = {
+            "Monday": "Senin", "Tuesday": "Selasa", "Wednesday": "Rabu",
+            "Thursday": "Kamis", "Friday": "Jumat",
+            "Saturday": "Sabtu", "Sunday": "Minggu",
+        }
+        df["day_of_week"] = df["day_of_week"].replace(en_to_id)
     return df
 
 def plotly_defaults(fig, height=350):
