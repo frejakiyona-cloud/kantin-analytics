@@ -237,7 +237,7 @@ with tab1:
     desc = df_f[num_cols].describe().T[["mean","std","min","50%","max"]]
     desc.columns = ["Mean","Std Dev","Min","Median","Max"]
     desc.index = [MENU_LABEL.get(i, i.replace("_"," ").title()) for i in desc.index]
-    st.dataframe(desc.style.format("{:,.1f}").background_gradient(cmap="Blues", axis=0), use_container_width=True)
+    st.dataframe(desc.style.format("{:,.1f}"), use_container_width=True)
 
     st.markdown('<div class="section-head">Distribusi Pendapatan Harian & Waktu Antrian</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
