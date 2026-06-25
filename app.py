@@ -95,6 +95,14 @@ def insight(text, kind="blue"):
     cls = {"blue":"insight-box","warn":"insight-warn","ok":"insight-ok"}.get(kind,"insight-box")
     st.markdown(f'<div class="{cls}"><p>📊 {text}</p></div>', unsafe_allow_html=True)
 
+
+def safe_idx(series, method="max"):
+    """idxmax/idxmin that returns None instead of raising on all-NaN."""
+    s = series.dropna()
+    if s.empty:
+        return None
+    return s.idxmax() if method == "max" else s.idxmin()
+
 def load_data(file):
     df = pd.read_csv(file)
     df.columns = df.columns.str.strip().str.lower()
@@ -172,7 +180,7 @@ avg_rev    = df_f["total_revenue_idr"].mean()
 total_cust = df_f["total_customers"].sum()
 avg_queue  = df_f["avg_queue_time_minutes"].mean()
 total_run  = df_f["stock_runout_events"].sum()
-best_day_row = df_f.loc[df_f["total_revenue_idr"].idxmax()]
+best_day_row = df_f.loc[df_f["total_revenue_idr"].dropna().idxmax()] if not df_f["total_revenue_idr"].dropna().empty else df_f.iloc[0]
 
 menu_cols   = list(MENU_PRICE.keys())
 menu_totals = {c: df_f[c].sum() for c in menu_cols if c in df_f.columns}
@@ -282,8 +290,8 @@ with tab1:
     st.plotly_chart(plotly_defaults(fig, 300), use_container_width=True)
 
     if len(monthly) > 0:
-        best_month  = monthly.loc[monthly["total_revenue_idr"].idxmax(), "month_name"]
-        worst_month = monthly.loc[monthly["total_revenue_idr"].idxmin(), "month_name"]
+        best_month  = monthly.iloc[monthly["total_revenue_idr"].dropna().argmax()]["month_name"] if not monthly["total_revenue_idr"].dropna().empty else "—"
+        worst_month = monthly.iloc[monthly["total_revenue_idr"].dropna().argmin()]["month_name"] if not monthly["total_revenue_idr"].dropna().empty else "—"
         best_val    = monthly["total_revenue_idr"].max()
         worst_val   = monthly["total_revenue_idr"].min()
         gap_pct     = (best_val - worst_val) / worst_val * 100
@@ -444,8 +452,8 @@ with tab2:
     fig.update_layout(coloraxis_showscale=False)
     fig.update_xaxes(title="Minggu ke-")
     fig.update_yaxes(title="Total Pendapatan (IDR)")
-    best_wk  = weekly.loc[weekly["total_revenue_idr"].idxmax(), "week"]
-    worst_wk = weekly.loc[weekly["total_revenue_idr"].idxmin(), "week"]
+    best_wk  = weekly.iloc[weekly["total_revenue_idr"].dropna().argmax()]["week"] if not weekly["total_revenue_idr"].dropna().empty else "—"
+    worst_wk = weekly.iloc[weekly["total_revenue_idr"].dropna().argmin()]["week"] if not weekly["total_revenue_idr"].dropna().empty else "—"
     best_wv  = weekly["total_revenue_idr"].max()
     worst_wv = weekly["total_revenue_idr"].min()
     st.plotly_chart(plotly_defaults(fig, 300), use_container_width=True)
@@ -601,14 +609,16 @@ with tab3:
             # Find menus that spike most on event days
             if len(cols_grp) == 2:
                 ev_menu["diff"] = ev_menu[cols_grp[1]] - ev_menu[cols_grp[0]]
-                spike_menu = ev_menu.loc[ev_menu["diff"].idxmax(), "menu"]
-                spike_val  = ev_menu["diff"].max()
-                insight(
-                    f"Pada hari acara sekolah, penjualan <strong>{spike_menu}</strong> mengalami peningkatan terbesar "
-                    f"(+{spike_val:.1f} porsi/hari). Kantin sebaiknya memprioritaskan persiapan menu ini di hari-hari acara. "
-                    f"Secara umum, hari acara mendorong kenaikan di hampir semua menu, bukan hanya satu kategori.",
-                    "ok"
-                )
+                _diff_clean = ev_menu["diff"].dropna()
+                if not _diff_clean.empty:
+                    spike_menu = ev_menu.loc[_diff_clean.idxmax(), "menu"]
+                    spike_val  = _diff_clean.max()
+                    insight(
+                        f"Pada hari acara sekolah, penjualan <strong>{spike_menu}</strong> mengalami peningkatan terbesar "
+                        f"(+{spike_val:.1f} porsi/hari). Kantin sebaiknya memprioritaskan persiapan menu ini di hari-hari acara. "
+                        f"Secara umum, hari acara mendorong kenaikan di hampir semua menu, bukan hanya satu kategori.",
+                        "ok"
+                    )
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB 4
@@ -627,17 +637,22 @@ with tab4:
             fig.update_yaxes(title="Waktu Antrian (menit)")
             st.plotly_chart(plotly_defaults(fig, 340), use_container_width=True)
 
-            day_q = df_day.groupby("day_of_week")["avg_queue_time_minutes"].agg(["median","std"]).reindex(DAY_ORDER).dropna()
-            longest_q_day = day_q["median"].idxmax() if not day_q["median"].isna().all() else "—"
-            most_var_day  = day_q["std"].idxmax() if not day_q["std"].isna().all() else "—" 
-            insight(
-                f"Median waktu antrian terlama terjadi pada hari <strong>{longest_q_day}</strong> "
-                f"({day_q.loc[longest_q_day,'median']:.1f} menit). "
-                f"Variasi antrian terbesar ada di hari <strong>{most_var_day}</strong> — "
-                f"artinya di hari ini antrean sangat tidak konsisten, ada kalanya cepat dan ada kalanya sangat panjang. "
-                f"Tambahan kasir atau sistem pre-order bisa membantu menstabilkan kondisi ini.",
-                "warn"
-            )
+            day_q = df_day.groupby("day_of_week")["avg_queue_time_minutes"].agg(["median","std"])
+            day_q = day_q.reindex(DAY_ORDER).dropna(how="all")
+            if not day_q.empty:
+                med_clean     = day_q["median"].dropna()
+                std_clean     = day_q["std"].dropna()
+                longest_q_day = med_clean.idxmax() if not med_clean.empty else "—"
+                most_var_day  = std_clean.idxmax() if not std_clean.empty else "—"
+                longest_q_val = float(med_clean[longest_q_day]) if longest_q_day != "—" else 0.0
+                insight(
+                    f"Median waktu antrian terlama terjadi pada hari <strong>{longest_q_day}</strong> "
+                    f"({longest_q_val:.1f} menit). "
+                    f"Variasi antrian terbesar ada di hari <strong>{most_var_day}</strong> — "
+                    f"artinya di hari ini antrean sangat tidak konsisten, ada kalanya cepat dan ada kalanya sangat panjang. "
+                    f"Tambahan kasir atau sistem pre-order bisa membantu menstabilkan kondisi ini.",
+                    "warn"
+                )
 
     with c2:
         st.markdown('<div class="section-head">Pelanggan vs Waktu Antrian</div>', unsafe_allow_html=True)
@@ -708,8 +723,8 @@ with tab4:
             fig.update_yaxes(title="Rata-rata Kejadian/Hari")
             st.plotly_chart(plotly_defaults(fig, 300), use_container_width=True)
 
-            max_wx = runout_wx.loc[runout_wx["stock_runout_events"].idxmax(), "weather"]
-            min_wx = runout_wx.loc[runout_wx["stock_runout_events"].idxmin(), "weather"]
+            max_wx = runout_wx.iloc[runout_wx["stock_runout_events"].dropna().argmax()]["weather"] if not runout_wx["stock_runout_events"].dropna().empty else "—"
+            min_wx = runout_wx.iloc[runout_wx["stock_runout_events"].dropna().argmin()]["weather"] if not runout_wx["stock_runout_events"].dropna().empty else "—"
             max_v  = runout_wx["stock_runout_events"].max()
             min_v  = runout_wx["stock_runout_events"].min()
             insight(
@@ -771,8 +786,8 @@ with tab5:
         wx_display["Avg Runout"]     = wx_display["Avg Runout"].round(2)
         st.dataframe(wx_display, use_container_width=True, hide_index=True)
 
-        best_wx  = wx_agg.loc[wx_agg["Avg_Rev"].idxmax(), "weather"]
-        worst_wx = wx_agg.loc[wx_agg["Avg_Rev"].idxmin(), "weather"]
+        best_wx  = wx_agg.iloc[wx_agg["Avg_Rev"].dropna().argmax()]["weather"] if not wx_agg["Avg_Rev"].dropna().empty else "—"
+        worst_wx = wx_agg.iloc[wx_agg["Avg_Rev"].dropna().argmin()]["weather"] if not wx_agg["Avg_Rev"].dropna().empty else "—"
         best_wv  = wx_agg["Avg_Rev"].max()
         worst_wv = wx_agg["Avg_Rev"].min()
         diff_wx  = (best_wv - worst_wv) / worst_wv * 100 if worst_wv > 0 else 0
@@ -799,13 +814,14 @@ with tab5:
                 st.plotly_chart(plotly_defaults(fig, 320), use_container_width=True)
 
                 # Find day-weather combo with highest revenue
-                best_combo = wx_day.loc[wx_day["total_revenue_idr"].idxmax()]
-                insight(
-                    f"Kombinasi terbaik adalah <strong>{best_combo['day_of_week']} + cuaca {best_combo['weather']}</strong> "
-                    f"dengan rata-rata {fmt_idr(best_combo['total_revenue_idr'])}. "
-                    f"Pada kondisi ini, kantin harus benar-benar siap — stok penuh dan personel lengkap.",
-                    "ok"
-                )
+                best_combo = wx_day.iloc[wx_day["total_revenue_idr"].dropna().argmax()] if not wx_day["total_revenue_idr"].dropna().empty else None
+                if best_combo is not None:
+                    insight(
+                        f"Kombinasi terbaik adalah <strong>{best_combo['day_of_week']} + cuaca {best_combo['weather']}</strong> "
+                        f"dengan rata-rata {fmt_idr(best_combo['total_revenue_idr'])}. "
+                        f"Pada kondisi ini, kantin harus benar-benar siap — stok penuh dan personel lengkap.",
+                        "ok"
+                    )
 
         with c2:
             st.markdown('<div class="section-head">Penjualan Minuman: Hujan vs Cerah</div>', unsafe_allow_html=True)
