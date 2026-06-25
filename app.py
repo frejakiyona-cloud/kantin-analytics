@@ -396,18 +396,20 @@ with tab2:
             fig.update_yaxes(title="Rata-rata Pendapatan (IDR)")
             st.plotly_chart(plotly_defaults(fig, 320), use_container_width=True)
 
-            best_day  = day_avg.loc[day_avg["total_revenue_idr"].idxmax(), "day_of_week"]
-            worst_day = day_avg.loc[day_avg["total_revenue_idr"].idxmin(), "day_of_week"]
-            best_d_val  = day_avg["total_revenue_idr"].max()
-            worst_d_val = day_avg["total_revenue_idr"].min()
-            gap_d = (best_d_val - worst_d_val) / worst_d_val * 100
-            insight(
-                f"<strong>{best_day}</strong> adalah hari dengan rata-rata pendapatan tertinggi ({fmt_idr(best_d_val)}), "
-                f"sedangkan <strong>{worst_day}</strong> terendah ({fmt_idr(worst_d_val)}). "
-                f"Selisih antar hari mencapai <strong>{gap_d:.1f}%</strong>. "
-                f"Kantin sebaiknya menyiapkan stok lebih banyak dan personel tambahan pada hari {best_day}.",
-                "ok"
-            )
+            day_avg_v = day_avg.dropna(subset=["total_revenue_idr"])
+            if not day_avg_v.empty:
+                best_day  = day_avg_v.loc[day_avg_v["total_revenue_idr"].idxmax(), "day_of_week"]
+                worst_day = day_avg_v.loc[day_avg_v["total_revenue_idr"].idxmin(), "day_of_week"]
+                best_d_val  = day_avg_v["total_revenue_idr"].max()
+                worst_d_val = day_avg_v["total_revenue_idr"].min()
+                gap_d = (best_d_val - worst_d_val) / worst_d_val * 100 if worst_d_val > 0 else 0
+                insight(
+                    f"<strong>{best_day}</strong> adalah hari dengan rata-rata pendapatan tertinggi ({fmt_idr(best_d_val)}), "
+                    f"sedangkan <strong>{worst_day}</strong> terendah ({fmt_idr(worst_d_val)}). "
+                    f"Selisih antar hari mencapai <strong>{gap_d:.1f}%</strong>. "
+                    f"Kantin sebaiknya menyiapkan stok lebih banyak dan personel tambahan pada hari {best_day}.",
+                    "ok"
+                )
 
     with c2:
         st.markdown('<div class="section-head">Pendapatan: Acara vs Non-Acara</div>', unsafe_allow_html=True)
@@ -625,9 +627,9 @@ with tab4:
             fig.update_yaxes(title="Waktu Antrian (menit)")
             st.plotly_chart(plotly_defaults(fig, 340), use_container_width=True)
 
-            day_q = df_day.groupby("day_of_week")["avg_queue_time_minutes"].agg(["median","std"]).reindex(DAY_ORDER)
-            longest_q_day = day_q["median"].idxmax()
-            most_var_day  = day_q["std"].idxmax()
+            day_q = df_day.groupby("day_of_week")["avg_queue_time_minutes"].agg(["median","std"]).reindex(DAY_ORDER).dropna()
+            longest_q_day = day_q["median"].idxmax() if not day_q["median"].isna().all() else "—"
+            most_var_day  = day_q["std"].idxmax() if not day_q["std"].isna().all() else "—" 
             insight(
                 f"Median waktu antrian terlama terjadi pada hari <strong>{longest_q_day}</strong> "
                 f"({day_q.loc[longest_q_day,'median']:.1f} menit). "
@@ -679,8 +681,12 @@ with tab4:
             fig.update_yaxes(title="Jumlah Kejadian")
             st.plotly_chart(plotly_defaults(fig, 300), use_container_width=True)
 
-            worst_runout_day = runout_day.loc[runout_day["stock_runout_events"].idxmax(), "day_of_week"]
-            worst_runout_val = runout_day["stock_runout_events"].max()
+            runout_day_v = runout_day.dropna(subset=["stock_runout_events"])
+            if not runout_day_v.empty:
+                worst_runout_day = runout_day_v.loc[runout_day_v["stock_runout_events"].idxmax(), "day_of_week"]
+                worst_runout_val = runout_day_v["stock_runout_events"].max()
+            else:
+                worst_runout_day, worst_runout_val = "—", 0
             insight(
                 f"Hari <strong>{worst_runout_day}</strong> paling sering mengalami kehabisan stok "
                 f"(total <strong>{int(worst_runout_val)} kejadian</strong> selama periode ini). "
